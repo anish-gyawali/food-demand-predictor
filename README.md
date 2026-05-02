@@ -97,7 +97,7 @@ food-demand-predictor/
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/food-demand-predictor.git
+git clone https://github.com/anish-gyawali/food-demand-predictor.git
 cd food-demand-predictor
 
 python -m venv venv
