@@ -111,6 +111,68 @@ class DemandPredictor:
         else:
             return "high"
 
+    def predict_batch(self, request_data: dict) -> dict:
+        """
+        Predict demand for all 24 hours of a given day.
+    
+        Instead of calling predict() 24 times in a loop
+        (which would build 24 separate DataFrames), we build
+        one DataFrame with 24 rows and call model.predict() once.
+    
+        This is more efficient and is the correct pattern for
+        batch inference in production systems.
+    
+        Input:  restaurant context (day, month, averages)
+        Output: list of 24 hourly predictions + summary stats
+        """
+        if not self.is_loaded:
+            raise RuntimeError("Model is not loaded. Call load() first.")
+    
+        # Build a 24-row DataFrame — one row per hour
+        rows = []
+        for hour in range(24):
+            rows.append({
+                "order_hour":            hour,
+                "day_of_week":           request_data["day_of_week"],
+                "month":                 request_data["month"],
+                "is_weekend":            int(request_data["is_weekend"]),
+                "avg_price":             request_data["avg_price"],
+                "avg_tip":               request_data["avg_tip"],
+                "avg_delivery_duration": request_data["avg_delivery_duration"],
+                "avg_distance":          request_data["avg_distance"],
+                "avg_toppings":          request_data["avg_toppings"],
+            })
+    
+        input_df = pd.DataFrame(rows)[self.feature_columns]
+    
+        # One model.predict() call for all 24 hours at once
+        raw_predictions = self.model.predict(input_df)
+    
+        # Build the hourly results list
+        hourly_predictions = []
+        for hour, raw_pred in enumerate(raw_predictions):
+            predicted_orders = max(0, int(round(raw_pred)))
+            hourly_predictions.append({
+                "hour":             hour,
+                "predicted_orders": predicted_orders,
+                "demand_level":     self._get_demand_level(predicted_orders),
+            })
+    
+        # Summary statistics
+        total_predicted = sum(h["predicted_orders"] for h in hourly_predictions)
+        peak_hour = max(hourly_predictions, key=lambda h: h["predicted_orders"])["hour"]
+    
+        logger.info(
+            f"Batch prediction complete: "
+            f"total={total_predicted} orders, "
+            f"peak_hour={peak_hour}"
+        )
+    
+        return {
+            "total_predicted_orders": total_predicted,
+            "peak_hour":              peak_hour,
+            "hourly_predictions":     hourly_predictions,
+        }
 
 # Single instance shared across all requests
 # This is the object FastAPI will use

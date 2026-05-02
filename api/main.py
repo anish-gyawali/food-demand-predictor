@@ -1,7 +1,13 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
-from api.schemas import PredictionRequest, PredictionResponse, HealthResponse
+from api.schemas import (
+    PredictionRequest,
+    PredictionResponse,
+    BatchPredictionRequest,
+    BatchPredictionResponse,
+    HealthResponse
+)
 from api.predictor import predictor
 
 logging.basicConfig(
@@ -78,4 +84,35 @@ def predict_demand(request: PredictionRequest):
 
     except Exception as e:
         logger.error(f"Prediction failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@app.post("/predict/batch", response_model=BatchPredictionResponse)
+def predict_demand_batch(request: BatchPredictionRequest):
+    """
+    Predict hourly demand for all 24 hours of a given day.
+
+    Send restaurant context once, receive a full day forecast.
+    More efficient than calling /predict 24 times.
+
+    Use this for:
+    - Daily staff scheduling
+    - Ingredient prep planning
+    - Identifying peak windows for the day
+    """
+    try:
+        result = predictor.predict_batch(request.model_dump())
+
+        return BatchPredictionResponse(
+            restaurant_name=request.restaurant_name,
+            day_of_week=request.day_of_week,
+            month=request.month,
+            is_weekend=request.is_weekend,
+            total_predicted_orders=result["total_predicted_orders"],
+            peak_hour=result["peak_hour"],
+            hourly_predictions=result["hourly_predictions"],
+            model_version="1.0.0"
+        )
+
+    except Exception as e:
+        logger.error(f"Batch prediction failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
